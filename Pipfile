@@ -9,6 +9,7 @@ psycopg2-binary = "*"
 flask-sqlalchemy = "*"
 flask-session = "*"
 flask-migrate = "*"
+flask-cors = "*"
 
 [dev-packages]
 black = "*"

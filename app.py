@@ -1,6 +1,7 @@
 import datetime
 from http.client import NOT_FOUND
 import json
+import logging
 from time import strptime
 from typing import List
 from urllib.parse import urlparse
@@ -11,6 +12,7 @@ from flask import (
     request,
 )
 from flask_sqlalchemy import Pagination, SQLAlchemy
+from flask_cors import CORS
 
 from model import Contato, Usuario, db
 
@@ -36,6 +38,8 @@ app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://postgres:root@localhost:54
 db.init_app(app)
 migrate = Migrate(app, db)
 
+CORS(app, supports_credentials=True)  # TODO: Adicionar restrições de domínio
+logging.getLogger('flask_cors').level = logging.DEBUG
 
 PER_PAGE = 10
 
