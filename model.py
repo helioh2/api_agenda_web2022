@@ -3,6 +3,8 @@
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 
+from utils import format_field
+
 db = SQLAlchemy()
 
 class Usuario(db.Model):
@@ -17,7 +19,7 @@ class Usuario(db.Model):
         return check_password_hash(self.password_hash, password)
 
     def as_dict(self):
-       return {c.name: getattr(self, c.name) for c in self.__table__.columns}
+       return {c.name: format_field(getattr(self, c.name)) for c in self.__table__.columns}
 
 
 class Contato(db.Model):
@@ -33,4 +35,4 @@ class Contato(db.Model):
         return '<Contato %r>' % self.nome
 
     def as_dict(self):
-       return {c.name: getattr(self, c.name) for c in self.__table__.columns}
+       return {c.name: format_field(getattr(self, c.name)) for c in self.__table__.columns}

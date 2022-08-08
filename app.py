@@ -64,15 +64,13 @@ def contatos():
     except:
         per_page = PER_PAGE
 
-    contatos:Pagination = (
-        Contato.query                                # objeto Query
-                .filter_by(id_usuario=usuario.id)    # objeto Query
-                .paginate(page=page, per_page=per_page)       # objeto Pagination
-    )
+    query_contatos = Contato.query.filter_by(id_usuario=usuario.id)
 
-    # o = urlparse(request.base_url)
-    # path = "http://" + o.hostname + ":" + str(o.port) + o.path
-    # path = "http://" + o.hostname + ":" + str(o.port) + o.path
+    if request.args.get("nome"):
+        nome = "%" + request.args.get("nome") + "%"
+        query_contatos = query_contatos.filter(Contato.nome.ilike(nome))
+
+    contatos:Pagination = query_contatos.paginate(page=page, per_page=per_page)
 
     contatos_json = pagination_to_json(contatos, request.path)
     contatos_json["items"] = [contato.as_dict() for contato in contatos.items]

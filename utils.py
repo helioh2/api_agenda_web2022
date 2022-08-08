@@ -1,4 +1,13 @@
+from datetime import date, datetime
 from flask_sqlalchemy import Pagination
+
+
+
+def format_field(data):
+    if isinstance(data, date) or isinstance(data, datetime):
+        return data.strftime("%d/%m/%Y")
+    else:
+        return data
 
 
 def pagination_to_json(pagination:Pagination, host_path:str):
