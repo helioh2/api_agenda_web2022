@@ -1,18 +1,18 @@
 import datetime
-from http.client import NOT_FOUND
 import json
-import logging
 from time import strptime
 from typing import List
-from urllib.parse import urlparse
 from flask import (
     Flask,
-    Response,
     session,
+    escape,
+    make_response,
+    redirect,
+    render_template,
     request,
+    url_for,
 )
 from flask_sqlalchemy import Pagination, SQLAlchemy
-from flask_cors import CORS
 
 from model import Contato, Usuario, db
 
@@ -21,10 +21,6 @@ import psycopg2.extras
 from flask_migrate import Migrate
 
 from flask_session import Session
-from utils import pagination_to_json
-
-from validacao_form import validar_form
-
 
 
 app = Flask(__name__)
@@ -38,163 +34,241 @@ app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://postgres:root@localhost:54
 db.init_app(app)
 migrate = Migrate(app, db)
 
-CORS(app, supports_credentials=True)  # TODO: Adicionar restrições de domínio
-logging.getLogger('flask_cors').level = logging.DEBUG
-
 PER_PAGE = 10
 
+
+## Usuario 1 --> * Contato
+
+@app.get("/")
+def main():
+    return render_template("index.html", data=datetime.datetime.utcnow())
+
+
+@app.get("/about/")
+def about():
+    return render_template("about.html")
+
 @app.get("/contatos")
-def contatos():
+def contatos_json():
 
-    ## Pegar usuario logado, se existir:
-    usuario = None
-    if "user" in session.keys():
-        usuario = session["user"]
+     ## Pegar usuario logado, se existir:
+    # usuario = None
+    # if "user" in session.keys():
+    #     usuario = session["user"]
 
-    if not usuario:
-        return {"erro": "Usuário não logado"}
+    # if not usuario:
+    #     return {"erro": "Usuário não logado"}
 
-    try:
-        page = int(request.args.get("page")) ## pode dar erro de conversão de string que não é inteiro
-    except:
-        page = 1
+    # busca_str = "%" + request.args.get("busca") + "%"
+    id_usuario = 2
+    
+    contatos:List[Contato] = (
+        Contato.query                                # objeto Query
+                .filter_by(id_usuario=id_usuario)    # objeto Query
+                # .filter(Contato.nome.ilike(busca_str))  # objeto Query
+                .all()  # List[Contato]
+    )
 
-    try:
-        per_page = int(request.args.get("per_page"))
-    except:
-        per_page = PER_PAGE
-
-    query_contatos = Contato.query.filter_by(id_usuario=usuario.id)
-
-    if request.args.get("nome"):
-        nome = "%" + request.args.get("nome") + "%"
-        query_contatos = query_contatos.filter(Contato.nome.ilike(nome))
-
-    contatos:Pagination = query_contatos.paginate(page=page, per_page=per_page)
-
-    contatos_json = pagination_to_json(contatos, request.path)
-    contatos_json["items"] = [contato.as_dict() for contato in contatos.items]
-
-    return contatos_json
+    return json.dumps([contato.as_dict() for contato in contatos])
 
 
-@app.get("/contatos/<int:id_>")
+@app.get("/contatos/<id_>")
 def contato(id_):
 
-    ## Pegar usuario logado, se existir:
-    usuario = None
-    if "user" in session.keys():
-        usuario = session["user"]
+    id_usuario = 2   ## TODO: depois trocar pela validação de sessão
 
-    if not usuario:
-        return {"erro": "Usuário não logado"}
+    contato = (
+        Contato.query                                # objeto Query
+                .filter_by(id_usuario=id_usuario)    # objeto Query
+                .filter_by(id=id_)                   # objeto Query   
+                .first()  # Contato
+    )
 
-    contato = Contato.query.filter_by(id=id_).first()
-
-    return Response(status=NOT_FOUND) if not contato else contato.as_dict() 
+    return json.dumps(contato.as_dict())
 
 
-@app.post("/contatos")
+
+
+
+
+# @app.get("/contatos")
+# def contatos():
+
+#     ## Pegar usuario logado, se existir:
+#     usuario = None
+#     if "user" in session.keys():
+#         usuario = session["user"]
+
+#     if not usuario:
+#         return "É NECESSÁRIO ESTAR LOGADO PARA VER A LISTA DE CONTATOS"  # TODO: MELHORAR
+
+#     try:
+#         pag = int(request.args.get("page")) ## pode dar erro de conversão de string que não é inteiro
+#     except:
+#         pag = 1
+
+#     print("Página que veio na URL:", pag)
+
+#     contatos:Pagination = (
+#         Contato.query                                # objeto Query
+#                 .filter_by(id_usuario=usuario.id)    # objeto Query
+#                 .paginate(page=pag, per_page=PER_PAGE)       # objeto Pagination
+#     )
+
+#     print("Quantidade total de páginas:", contatos.pages)
+#     print("Página atual:", contatos.page)
+#     print("Tem mais páginas?", contatos.has_next)
+#     print("Items:", contatos.items)
+
+#     return render_template("contatos.html", contatos=contatos)  #mandando dados para View
+
+
+@app.get("/adicionar_contato_form")
+def adicionar_contato_form():
+    return render_template("adicionar_contato_form.html")
+
+
+@app.post("/adicionar_contato_action")
 def adicionar_contato_action():
+
+    resultado_validacao = validar_form(request.form)
+
+    if resultado_validacao:  # se ele não for {}
+        contato = dict(request.form)
+        return render_template(
+            "adicionar_contato_form.html",
+            contato=contato,
+            erros_validacao=resultado_validacao,
+        )
 
     usuario = session["user"]
 
     if not usuario:
-        return {"erro": "Usuário não logado"}
+        return "É NECESSÁRIO ESTAR LOGADO PARA ADICIONAR CONTATO"  # TODO: MELHORAR
 
-    id_usuario = request.json["id_usuario"]
-    if id_usuario != usuario.id:
-        return {"erro", f"Usuário logado não tem permissão para adicionar contatos para usuário {id_usuario}"}
-    
-    resultado_validacao = validar_form(request.json)
-
-    if resultado_validacao:  # se ele não for {}
-        contato = dict(request.form)
-        return resultado_validacao
-    
-
-    nome = request.json["nome"]
-    telefone = request.json["telefone"]
-    data_nascimento = request.json["data_nascimento"]
-    detalhes = request.json["detalhes"]
-    
+    #else
+    nome = request.form["nome"]
+    telefone = request.form["telefone"]
+    data_nascimento = request.form["data_nascimento"]
+    detalhes = request.form["detalhes"]
+   
     contato = Contato(
         nome=nome, 
         telefone=telefone, 
         data_nascimento=data_nascimento,
         detalhes=detalhes,
-        id_usuario=id_usuario
-    )
+        id_usuario=usuario.id)
 
-    db.session.add(contato)
+    db.session.merge(contato)  # adiciona ou atualiza
     db.session.commit()
     
-    return contato.as_dict()
+    return redirect(url_for("contatos"))
 
 
-@app.delete("/contatos/<int:id_>")
-def remover_contato_action(id_):
+@app.get("/remover_contato_action")
+def remover_contato_action():
+
+    id_ = request.args["id"]
 
     contato = Contato.query.filter_by(id=id_).first()
     db.session.delete(contato)
     db.session.commit()
 
-    return contato.as_dict()
+    return redirect(url_for("contatos"))
 
 
-@app.post("/usuario")
+@app.get("/alterar_contato_form")
+def alterar_contato_form():
+    id_ = request.args["id"]
+
+    contato = Contato.query.filter_by(id=id_).first()
+
+    return render_template("adicionar_contato_form.html", contato=contato)
+
+
+@app.get("/cadastrar_usuario_form")
+def cadastrar_usuario_form():
+    return render_template("cadastrar.html")
+
+
+@app.route("/cadastrar_usuario_action", methods=["GET", "POST"])
 def cadastrar_usuario_action():
 
-    username = request.form.get("username")
-    senha = request.form.get("senha")
+    if request.method == "POST":
+        username = request.form.get("username")
+        senha = request.form.get("senha")
 
-    usuario = Usuario.query.filter_by(username=username).first()
+        usuario = Usuario.query.filter_by(username=username).first()
 
-    if usuario:
-        return {"erro": "USUÁRIO JA EXISTE"}
+        if usuario:
+            return "USUÁRIO JA EXISTE"  ## TODO: MELHORAR ISSO
 
-    #else
-    usuario = Usuario(username=username)
+        #else
+        usuario = Usuario(username=username)
 
-    usuario.set_password(senha)
+        usuario.set_password(senha)
 
-    db.session.add(usuario) ## INSERT
+        db.session.add(usuario) ## INSERT
 
-    db.session.commit() ## COMMIT DA TRANSAÇÃO
+        db.session.commit() ## COMMIT DA TRANSAÇÃO
 
-    usuario_json = usuario.as_dict()
-    del usuario_json["password_hash"]
+        # SETAR A SESSÃO (COOKIE)
+        session["user"] = usuario
 
-    return usuario_json
-
-
-@app.post("/sessions")
-def login_action():
-
-    username = request.json.get("username")
-    senha = request.json.get("senha")
-
-    ## AUTENTICAÇÃO
-    usuario: Usuario = Usuario.query.filter_by(username=username).first()
-
-    if not usuario:
-        return {"erro": "Usuário não existe"} 
-
-    if not usuario.check_password(senha):
-        return {"erro": "Senha incorreta"}
+        return render_template("index.html")
 
     # else
-    session["user"] = usuario
-
-    usuario_json = usuario.as_dict()
-    del usuario_json["password_hash"]
-
-    return usuario_json  # TODO: isto devolve o cookie da sessão?
+    return render_template("erro.html")
 
 
-@app.delete("/sessions/<username>")
-def logout_action(username):
+@app.get("/login_form")
+def login_form():
+    return render_template("login_form.html")
 
+
+@app.route("/login_action", methods=["POST", "GET"])
+def login_action():
+
+    if request.method == "POST":
+        username = request.form.get("username")
+        senha = request.form.get("senha")
+
+        ## AUTENTICAÇÃO
+        usuario: Usuario = Usuario.query.filter_by(username=username).first()
+
+        if not usuario:
+            return "Usuário não existe"  ## TODO: MELHORAR ISSO
+
+        if not usuario.check_password(senha):
+            return "Senha incorreta"  ## TODO: MELHORAR ISSO
+
+        # else
+        session["user"] = usuario
+
+        resp = make_response(render_template("index.html"))
+
+        return resp
+
+    # else
+    return render_template("erro.html")
+
+
+@app.get("/logout_action")
+def logout_action():
+    resp = make_response(render_template("index.html"))
     session["user"] = None
 
-    return {}
+    return resp
+
+
+@app.get("/form_test_xss")
+def form_test_xss():
+    return render_template("form_test.html")
+
+
+@app.post("/form_test_action")
+def form_test_action():
+    campo = request.form["campo"]
+
+    return "<p> {} </p>".format(escape(campo))
+
