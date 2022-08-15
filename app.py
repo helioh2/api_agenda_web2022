@@ -1,4 +1,5 @@
 import datetime
+from http.client import BAD_REQUEST, NOT_FOUND, UNAUTHORIZED, UNPROCESSABLE_ENTITY
 import json
 from time import strptime
 from typing import List
@@ -21,6 +22,8 @@ import psycopg2.extras
 from flask_migrate import Migrate
 
 from flask_session import Session
+
+from validacao_input import validar_json
 
 
 app = Flask(__name__)
@@ -51,16 +54,16 @@ def about():
 @app.get("/contatos")
 def contatos_json():
 
-     ## Pegar usuario logado, se existir:
-    # usuario = None
-    # if "user" in session.keys():
-    #     usuario = session["user"]
+     # Pegar usuario logado, se existir:
+    usuario = None
+    if "user" in session.keys():
+        usuario = session["user"]
 
-    # if not usuario:
-    #     return {"erro": "Usuário não logado"}
+    if not usuario:
+        return {"erro": "Usuário não logado"}, UNAUTHORIZED
 
     # busca_str = "%" + request.args.get("busca") + "%"
-    id_usuario = 2
+    id_usuario = usuario.id
     
     contatos:List[Contato] = (
         Contato.query                                # objeto Query
@@ -68,6 +71,9 @@ def contatos_json():
                 # .filter(Contato.nome.ilike(busca_str))  # objeto Query
                 .all()  # List[Contato]
     )
+
+    if not contatos:
+        return [], NOT_FOUND
 
     return json.dumps([contato.as_dict() for contato in contatos])
 
@@ -84,6 +90,12 @@ def contato(id_):
                 .first()  # Contato
     )
 
+    if not contato:
+        # resp = make_response(status=NOT_FOUND, )
+        # resp.status_code = NOT_FOUND
+        # resp.json({"erro": "Usuario não existe"})
+        return {"erro": "Usuario não existe"}, NOT_FOUND
+
     return json.dumps(contato.as_dict())
 
 
@@ -91,174 +103,163 @@ def contato(id_):
 
 
 
-# @app.get("/contatos")
-# def contatos():
-
-#     ## Pegar usuario logado, se existir:
-#     usuario = None
-#     if "user" in session.keys():
-#         usuario = session["user"]
-
-#     if not usuario:
-#         return "É NECESSÁRIO ESTAR LOGADO PARA VER A LISTA DE CONTATOS"  # TODO: MELHORAR
-
-#     try:
-#         pag = int(request.args.get("page")) ## pode dar erro de conversão de string que não é inteiro
-#     except:
-#         pag = 1
-
-#     print("Página que veio na URL:", pag)
-
-#     contatos:Pagination = (
-#         Contato.query                                # objeto Query
-#                 .filter_by(id_usuario=usuario.id)    # objeto Query
-#                 .paginate(page=pag, per_page=PER_PAGE)       # objeto Pagination
-#     )
-
-#     print("Quantidade total de páginas:", contatos.pages)
-#     print("Página atual:", contatos.page)
-#     print("Tem mais páginas?", contatos.has_next)
-#     print("Items:", contatos.items)
-
-#     return render_template("contatos.html", contatos=contatos)  #mandando dados para View
-
-
-@app.get("/adicionar_contato_form")
-def adicionar_contato_form():
-    return render_template("adicionar_contato_form.html")
-
-
-@app.post("/adicionar_contato_action")
+@app.post("/contatos")
 def adicionar_contato_action():
 
-    resultado_validacao = validar_form(request.form)
+    resultado_validacao = validar_json(request.json)
 
     if resultado_validacao:  # se ele não for {}
-        contato = dict(request.form)
-        return render_template(
-            "adicionar_contato_form.html",
-            contato=contato,
-            erros_validacao=resultado_validacao,
-        )
+        return resultado_validacao, UNPROCESSABLE_ENTITY
 
-    usuario = session["user"]
+    # usuario = session["user"]
 
-    if not usuario:
-        return "É NECESSÁRIO ESTAR LOGADO PARA ADICIONAR CONTATO"  # TODO: MELHORAR
+    # if not usuario:
+    #     return "É NECESSÁRIO ESTAR LOGADO PARA ADICIONAR CONTATO"  # TODO: MELHORAR
 
     #else
-    nome = request.form["nome"]
-    telefone = request.form["telefone"]
-    data_nascimento = request.form["data_nascimento"]
-    detalhes = request.form["detalhes"]
+    nome = request.json["nome"]
+    telefone = request.json["telefone"]
+    data_nascimento = request.json["data_nascimento"]
+    detalhes = request.json["detalhes"]
    
     contato = Contato(
         nome=nome, 
         telefone=telefone, 
         data_nascimento=data_nascimento,
         detalhes=detalhes,
-        id_usuario=usuario.id)
+        id_usuario=2)
 
-    db.session.merge(contato)  # adiciona ou atualiza
+    db.session.add(contato)  # adiciona ou atualiza
     db.session.commit()
+
+    ## TODO: SETAR ID NO RETORNO
     
-    return redirect(url_for("contatos"))
+    return json.dumps(contato.as_dict())
 
 
-@app.get("/remover_contato_action")
-def remover_contato_action():
-
-    id_ = request.args["id"]
+@app.delete("/contatos/<id_>")
+def remover_contato_action(id_):
 
     contato = Contato.query.filter_by(id=id_).first()
+
+    if not contato:
+        return {"erro": "Usuário não existe"}
+
     db.session.delete(contato)
     db.session.commit()
 
-    return redirect(url_for("contatos"))
+    return json.dumps(contato.as_dict())
 
 
-@app.get("/alterar_contato_form")
-def alterar_contato_form():
-    id_ = request.args["id"]
+@app.put("/contatos/<id_>")
+def put_contato(id_):
 
     contato = Contato.query.filter_by(id=id_).first()
 
-    return render_template("adicionar_contato_form.html", contato=contato)
+    if not contato:
+        return {"erro": "Usuario nao existe"}, UNPROCESSABLE_ENTITY
+
+    # id_ = request.json["id"]
+    nome = request.json["nome"]
+    telefone = request.json["telefone"]
+    data_nascimento = request.json["data_nascimento"]
+    detalhes = request.json["detalhes"]
+   
+    contato = Contato(
+        id=id_,
+        nome=nome, 
+        telefone=telefone, 
+        data_nascimento=data_nascimento,
+        detalhes=detalhes,
+        id_usuario=2)
+
+    db.session.merge(contato)  # adiciona ou atualiza
+    db.session.commit()
+
+    return json.dumps(contato.as_dict())
+
+    
+
+@app.patch("/contatos/<id_>")
+def patch_contato(id_):
+    contato = Contato.query.filter_by(id=id_).first()
+
+    if not contato:
+        return {"erro": "Usuario nao existe"}, UNPROCESSABLE_ENTITY
+
+    for nome_campo, valor in request.json.items():
+        # ex: "nome"  -> "Marcos Tacalepau Nesse Carrinho"
+        try:
+            setattr(contato, nome_campo, valor)
+        except:
+            continue  ## ALTERNATIVA: DAR ERRO
+        
+    db.session.merge(contato)  # adiciona ou atualiza
+    db.session.commit()
+
+    return json.dumps(contato.as_dict())
 
 
-@app.get("/cadastrar_usuario_form")
-def cadastrar_usuario_form():
-    return render_template("cadastrar.html")
-
-
-@app.route("/cadastrar_usuario_action", methods=["GET", "POST"])
+@app.post("/usuarios")
 def cadastrar_usuario_action():
 
-    if request.method == "POST":
-        username = request.form.get("username")
-        senha = request.form.get("senha")
+    username = request.json.get("username")
+    senha = request.json.get("senha")
 
-        usuario = Usuario.query.filter_by(username=username).first()
+    usuario = Usuario.query.filter_by(username=username).first()
 
-        if usuario:
-            return "USUÁRIO JA EXISTE"  ## TODO: MELHORAR ISSO
+    if usuario:
+        return {"erro": "Usuario já existe"}, BAD_REQUEST
 
-        #else
-        usuario = Usuario(username=username)
+    #else
+    usuario = Usuario(username=username)
 
-        usuario.set_password(senha)
+    usuario.set_password(senha)
 
-        db.session.add(usuario) ## INSERT
+    db.session.add(usuario) ## INSERT
 
-        db.session.commit() ## COMMIT DA TRANSAÇÃO
+    db.session.commit() ## COMMIT DA TRANSAÇÃO
 
-        # SETAR A SESSÃO (COOKIE)
-        session["user"] = usuario
+    dict_usuario = usuario.as_dict()
+    del dict_usuario["password_hash"]
 
-        return render_template("index.html")
-
-    # else
-    return render_template("erro.html")
+    return json.dumps(dict_usuario)
 
 
-@app.get("/login_form")
-def login_form():
-    return render_template("login_form.html")
-
-
-@app.route("/login_action", methods=["POST", "GET"])
+@app.post("/sessions")
 def login_action():
 
-    if request.method == "POST":
-        username = request.form.get("username")
-        senha = request.form.get("senha")
+    username = request.json.get("username")
+    senha = request.json.get("senha")
 
-        ## AUTENTICAÇÃO
-        usuario: Usuario = Usuario.query.filter_by(username=username).first()
+    ## AUTENTICAÇÃO
+    usuario: Usuario = Usuario.query.filter_by(username=username).first()
 
-        if not usuario:
-            return "Usuário não existe"  ## TODO: MELHORAR ISSO
+    if not usuario:
+        return {"erro": "Usuario não existe"}, BAD_REQUEST
 
-        if not usuario.check_password(senha):
-            return "Senha incorreta"  ## TODO: MELHORAR ISSO
-
-        # else
-        session["user"] = usuario
-
-        resp = make_response(render_template("index.html"))
-
-        return resp
+    if not usuario.check_password(senha):
+        return {"erro": "Senha incorreta"}, BAD_REQUEST  ## TODO: pesquisar qual seria o codigo mais correto
 
     # else
-    return render_template("erro.html")
+    session["user"] = usuario
+
+    dict_usuario = usuario.as_dict()
+    del dict_usuario["password_hash"]
+
+    return json.dumps(dict_usuario)
 
 
-@app.get("/logout_action")
-def logout_action():
-    resp = make_response(render_template("index.html"))
-    session["user"] = None
+@app.delete("/sessions/<id_>")
+def logout_action(id_):
 
-    return resp
+    usuario = session.get("user")
+    session.pop("user")
+
+    dict_usuario = usuario.as_dict()
+    del dict_usuario["password_hash"]
+
+    return json.dumps(dict_usuario)
 
 
 @app.get("/form_test_xss")
