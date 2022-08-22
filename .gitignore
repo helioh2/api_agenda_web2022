@@ -2,3 +2,5 @@ flask_session
 .vscode
 __pycache__
 .vercel
+run_db_remote.sh
+run_migration_remote.sh
