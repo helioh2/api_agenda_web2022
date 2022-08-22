@@ -3,7 +3,7 @@ from random import randrange
 from datetime import datetime
 
 import lorem
-from app import app
+from index import app
 from model import db, Contato
 import names
 
