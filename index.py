@@ -1,6 +1,7 @@
 from http.client import BAD_REQUEST, NOT_FOUND, UNAUTHORIZED, UNPROCESSABLE_ENTITY
 import json
 from typing import List
+import logging
 from flask import (
     Flask,
     session,
@@ -18,6 +19,7 @@ from flask_session import Session
 
 from validacao_input import validar_json
 
+from flask_cors import CORS
 
 app = Flask(__name__)
 
@@ -32,6 +34,10 @@ migrate = Migrate(app, db)
 
 PER_PAGE = 10
 
+CORS(app, supports_credentials=True, resources={r"/*": {"origins": "*"}})  # TODO: Adicionar restrições de domínio
+
+logging.getLogger('flask_cors').level = logging.DEBUG
+
 
 @app.get("/contatos")
 def contatos_json():
@@ -44,7 +50,41 @@ def contatos_json():
     if not usuario:
         return {"erro": "Usuário não logado"}, UNAUTHORIZED
 
-    # busca_str = "%" + request.args.get("busca") + "%"
+    id_usuario = usuario.id
+
+    if request.args.get("nome"):
+        busca_str = "%" + request.args.get("nome") + "%"
+        contatos:List[Contato] = (
+            Contato.query                                # objeto Query
+                    .filter_by(id_usuario=id_usuario)    # objeto Query
+                    .filter(Contato.nome.ilike(busca_str))  # objeto Query
+                    .all()  # List[Contato]
+        )
+    else:
+    
+        contatos:List[Contato] = (
+            Contato.query                                # objeto Query
+                    .filter_by(id_usuario=id_usuario)    # objeto Query
+                    .all()  # List[Contato]
+        )
+
+    if not contatos:
+        return [], NOT_FOUND
+
+    return json.dumps([contato.as_dict() for contato in contatos])
+
+
+@app.get("/contatos_fixo")
+def contatos_json_sem_login():
+
+     # Pegar usuario logado, se existir:
+    usuario = None
+    if "user" in session.keys():
+        usuario = session["user"]
+
+    if not usuario:
+        return {"erro": "Usuário não logado"}, UNAUTHORIZED
+
     id_usuario = usuario.id
     
     contatos:List[Contato] = (
