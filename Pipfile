@@ -10,6 +10,8 @@ flask-session = "*"
 flask-migrate = "*"
 flask-cors = "*"
 psycopg2-binary = "*"
+flask-pydantic-spec = "*"
+werkzeug = "==2.1.2"
 
 [dev-packages]
 black = "*"

@@ -1,7 +1,10 @@
 
 
+from datetime import datetime
+from enum import Enum
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
+from pydantic import BaseModel, constr
 
 db = SQLAlchemy()
 
@@ -33,5 +36,36 @@ class Contato(db.Model):
     def __repr__(self):
         return '<Contato %r>' % self.nome
 
-    def as_dict(self):
-       return {c.name: str(getattr(self, c.name)) for c in self.__table__.columns}
+    def to_json(self):
+       return ContatoSchema.from_orm(self).json()
+
+
+class ContatoSchema(BaseModel):
+    id: int
+    nome: constr(min_length=2, max_length=80)
+    telefone: constr(min_length=8, max_length=12)
+    data_nascimento: datetime
+    detalhes: str
+    id_usuario: int
+
+    class Config:
+        orm_mode = True
+
+
+class RelLinkEnum(str, Enum):
+    prev = "prev"
+    next = "next"
+    current = "current"
+
+
+class PageLinkSchema(BaseModel):
+    rel: RelLinkEnum
+    href: str
+
+
+class ContatosPaginatedSchema(BaseModel):
+    items: list[ContatoSchema]
+    page: int
+    per_page: int
+    total: int
+    _links: list[PageLinkSchema]
