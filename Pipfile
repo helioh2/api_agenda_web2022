@@ -12,6 +12,7 @@ flask-cors = "*"
 psycopg2-binary = "*"
 flask-pydantic-spec = "*"
 werkzeug = "==2.1.2"
+flask-jwt-extended = "*"
 
 [dev-packages]
 black = "*"

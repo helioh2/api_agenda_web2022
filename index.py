@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from http.client import BAD_REQUEST, NOT_FOUND, UNAUTHORIZED, UNPROCESSABLE_ENTITY
 import json
 import logging
@@ -22,7 +22,10 @@ from flask_cors import CORS
 
 from flask_sqlalchemy import Pagination
 
-from flask_pydantic_spec import FlaskPydanticSpec, Response, Request
+from flask_pydantic_spec import FlaskPydanticSpec, Response
+
+from flask_jwt_extended import create_access_token,get_jwt,get_jwt_identity, \
+                               unset_jwt_cookies, jwt_required, JWTManager
 
 
 app = Flask(__name__)
@@ -30,9 +33,9 @@ app = Flask(__name__)
 spec = FlaskPydanticSpec("flask", title="Contatos API")
 spec.register(app)
 
-app.config["SESSION_PERMANENT"] = False
-app.config["SESSION_TYPE"] = "filesystem"
-Session(app)
+app.config["JWT_SECRET_KEY"] = "please-remember-to-change-me!!!"
+app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(hours=1)
+jwt = JWTManager(app)
 
 setup_database(app)
 
@@ -46,27 +49,34 @@ CORS(app, supports_credentials=True, resources={r"/*": {"origins": "*"}})  # TOD
 logging.getLogger('flask_cors').level = logging.DEBUG
 
 
-def verificar_login():
-    # Pegar usuario logado, se existir:
-    usuario = None
-    if "user" in session.keys():
-        usuario = session["user"]
+@app.after_request
+def refresh_expiring_jwts(response):
+    """
+    Atualiza o token de autenticação se estiver faltando menos de 30 minutos
+    para expirar
+    """
+    try:
+        exp_timestamp = get_jwt()["exp"]
+        now = datetime.now(timezone.utc)
+        target_timestamp = datetime.timestamp(now + timedelta(minutes=30))
+        if target_timestamp > exp_timestamp:
+            access_token = create_access_token(identity=get_jwt_identity())
+            data = response.get_json()
+            if type(data) is dict:
+                data["access_token"] = access_token 
+                response.data = json.dumps(data)
+        return response
+    except (RuntimeError, KeyError):
+        # Caso em que não há um JWT válido. Basta retornar a resposta original
+        return response
 
-    if not usuario:
-        raise ValueError   ## TODO: Criar exceção especifica
 
-    return usuario
-
+@spec.validate(resp=Response(HTTP_200=ContatosPaginatedSchema))
 @app.get("/contatos")
-@spec.validate(resp=Response(HTTP_200=ContatosPaginatedSchema)
+@jwt_required()
 def contatos_json():
 
-    try:
-        usuario = verificar_login()
-    except:
-        return {"erro": "Usuário não logado"}, UNAUTHORIZED
-
-    id_usuario = usuario.id
+    id_usuario = get_jwt_identity()
 
     if request.args.get("page"):
         page = int(request.args.get("page"))  ## pode dar erro
@@ -96,42 +106,11 @@ def contatos_json():
     return contatos_json
 
 
-# @app.get("/contatos_fixo")
-# def contatos_json_sem_login():
-
-#      # Pegar usuario logado, se existir:
-#     usuario = None
-#     if "user" in session.keys():
-#         usuario = session["user"]
-
-#     if not usuario:
-#         return {"erro": "Usuário não logado"}, UNAUTHORIZED
-
-#     id_usuario = usuario.id
-    
-#     contatos:List[Contato] = (
-#         Contato.query                                # objeto Query
-#                 .filter_by(id_usuario=id_usuario)    # objeto Query
-#                 # .filter(Contato.nome.ilike(busca_str))  # objeto Query
-#                 .all()  # List[Contato]
-#     )
-
-#     if not contatos:
-#         return [], NOT_FOUND
-
-#     return json.dumps([contato.to_json() for contato in contatos])
-
-
 @app.get("/contatos/<id_>")
+@jwt_required()
 def contato(id_):
 
-    try:
-        usuario = verificar_login()
-    except:
-        return {"erro": "Usuário não logado"}, UNAUTHORIZED
-
-    id_usuario = usuario.id
-
+    id_usuario = get_jwt_identity()
 
     contato = (
         Contato.query                                # objeto Query
@@ -141,38 +120,21 @@ def contato(id_):
     )
 
     if not contato:
-        # resp = make_response(status=NOT_FOUND, )
-        # resp.status_code = NOT_FOUND
-        # resp.json({"erro": "Usuario não existe"})
         return {"erro": "Usuario não existe"}, NOT_FOUND
 
     return json.dumps(contato.to_json())
 
 
-
-
-
-
 @app.post("/contatos")
+@jwt_required()
 def adicionar_contato_action():
 
-    try:
-        usuario = verificar_login()
-    except:
-        return {"erro": "Usuário não logado"}, UNAUTHORIZED
-
-    id_usuario = usuario.id
-
+    id_usuario = get_jwt_identity()
 
     resultado_validacao = validar_json(request.json)
 
     if resultado_validacao:  # se ele não for {}
         return resultado_validacao, UNPROCESSABLE_ENTITY
-
-    # usuario = session["user"]
-
-    # if not usuario:
-    #     return "É NECESSÁRIO ESTAR LOGADO PARA ADICIONAR CONTATO"  # TODO: MELHORAR
 
     #else
     nome = request.json["nome"]
@@ -196,16 +158,12 @@ def adicionar_contato_action():
 
 
 @app.delete("/contatos/<id_>")
+@jwt_required()
 def remover_contato_action(id_):
 
-    try:
-        usuario = verificar_login()
-    except:
-        return {"erro": "Usuário não logado"}, UNAUTHORIZED
+    id_usuario = get_jwt_identity()
 
-    id_usuario = usuario.id
-
-    contato = Contato.query.filter_by(id=id_).first()
+    contato = Contato.query.filter_by(id=id_).filter_by(id_usuario=id_usuario).first()
 
     if not contato:
         return {"erro": "Usuário não existe"}, NOT_FOUND
@@ -221,19 +179,12 @@ def remover_contato_action(id_):
 
 
 @app.put("/contatos/<id_>")
+@jwt_required()
 def put_contato(id_):
 
-     # Pegar usuario logado, se existir:
-    usuario = None
-    if "user" in session.keys():
-        usuario = session["user"]
+    id_usuario = get_jwt_identity()
 
-    if not usuario:
-        return {"erro": "Usuário não logado"}, UNAUTHORIZED
-
-    id_usuario = usuario.id
-
-    contato = Contato.query.filter_by(id=id_).first()
+    contato = Contato.query.filter_by(id=id_).filter_by(id_usuario=id_usuario).first()
 
     if not contato:
         return {"erro": "Usuario nao existe"}, UNPROCESSABLE_ENTITY
@@ -263,19 +214,15 @@ def put_contato(id_):
     
 
 @app.patch("/contatos/<id_>")
+@jwt_required()
 def patch_contato(id_):
 
-    try:
-        usuario = verificar_login()
-    except:
-        return {"erro": "Usuário não logado"}, UNAUTHORIZED
+    id_usuario = get_jwt_identity()
 
-    id_usuario = usuario.id
-
-    contato = Contato.query.filter_by(id=id_).first()
+    contato = Contato.query.filter_by(id=id_).filter_by(id_usuario=id_usuario).first()
 
     if not contato:
-        return {"erro": "Usuario nao existe"}, UNPROCESSABLE_ENTITY
+        return {"erro": "Contato nao existe"}, UNPROCESSABLE_ENTITY
 
     if contato.id_usuario != id_usuario:
         return {"erro": "Contato não pertence ao usuário"}, UNAUTHORIZED
@@ -296,7 +243,6 @@ def patch_contato(id_):
 @app.post("/usuarios")
 def cadastrar_usuario_action():
 
-
     username = request.json.get("username")
     senha = request.json.get("senha")
 
@@ -307,11 +253,8 @@ def cadastrar_usuario_action():
 
     #else
     usuario = Usuario(username=username)
-
     usuario.set_password(senha)
-
     db.session.add(usuario) ## INSERT
-
     db.session.commit() ## COMMIT DA TRANSAÇÃO
 
     dict_usuario = usuario.to_json()
@@ -320,11 +263,14 @@ def cadastrar_usuario_action():
     return json.dumps(dict_usuario)
 
 
-@app.post("/sessions")
+@app.post("/token")
 def login_action():
 
-    username = request.json.get("username")
-    senha = request.json.get("senha")
+    username = request.json.get("username", None)
+    senha = request.json.get("senha", None)
+
+    if not username or not senha:
+        return {"erro": "Username e/ou senha não fornecidos"}, 401
 
     ## AUTENTICAÇÃO
     usuario: Usuario = Usuario.query.filter_by(username=username).first()
@@ -336,21 +282,29 @@ def login_action():
         return {"erro": "Senha incorreta"}, BAD_REQUEST  ## TODO: pesquisar qual seria o codigo mais correto
 
     # else
-    session["user"] = usuario
+    
+    access_token = create_access_token(identity=usuario.id)
+    response = {"access_token":access_token}
+    return response
 
-    dict_usuario = usuario.to_json()
+
+@app.get('/usuario')
+@jwt_required()
+def my_profile():
+    
+    id_usuario = get_jwt_identity()
+
+    usuario: Usuario = Usuario.query.filter_by(id=id_usuario).first()
+    
+    dict_usuario = usuario.as_dict()
     del dict_usuario["password_hash"]
 
     return json.dumps(dict_usuario)
 
 
-@app.delete("/sessions/<id_>")
-def logout_action(id_):
+@app.delete("/token")
+def logout_action():
 
-    usuario = session.get("user")
-    session.pop("user")
-
-    dict_usuario = usuario.to_json()
-    del dict_usuario["password_hash"]
-
-    return json.dumps(dict_usuario)
+    response = json.dumps({"msg": "logout successful"})
+    unset_jwt_cookies(response)
+    return response

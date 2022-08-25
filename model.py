@@ -1,6 +1,6 @@
 
 
-from datetime import datetime
+from datetime import date, datetime
 from enum import Enum
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -37,14 +37,14 @@ class Contato(db.Model):
         return '<Contato %r>' % self.nome
 
     def to_json(self):
-       return ContatoSchema.from_orm(self).json()
+       return ContatoSchema.from_orm(self).dict()
 
 
 class ContatoSchema(BaseModel):
     id: int
     nome: constr(min_length=2, max_length=80)
     telefone: constr(min_length=8, max_length=12)
-    data_nascimento: datetime
+    data_nascimento: date
     detalhes: str
     id_usuario: int
 
