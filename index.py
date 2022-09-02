@@ -71,7 +71,7 @@ def refresh_expiring_jwts(response):
         return response
 
 
-@spec.validate(resp=Response(HTTP_200=ContatosPaginatedSchema))
+
 @app.get("/contatos")
 @jwt_required()
 def contatos_json():
@@ -257,7 +257,7 @@ def cadastrar_usuario_action():
     db.session.add(usuario) ## INSERT
     db.session.commit() ## COMMIT DA TRANSAÇÃO
 
-    dict_usuario = usuario.to_json()
+    dict_usuario = usuario.as_dict()
     del dict_usuario["password_hash"]
 
     return json.dumps(dict_usuario)
@@ -303,8 +303,9 @@ def my_profile():
 
 
 @app.delete("/token")
+@jwt_required()
 def logout_action():
 
     response = json.dumps({"msg": "logout successful"})
-    unset_jwt_cookies(response)
+    # unset_jwt_cookies(response)  TODO
     return response

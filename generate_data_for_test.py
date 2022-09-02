@@ -36,7 +36,7 @@ for i in range(N):
         telefone=telefone,
         data_nascimento=data_nascimento,
         detalhes=detalhes,
-        id_usuario=2,
+        id_usuario=1,
     )
 
     db.session.add(contato)

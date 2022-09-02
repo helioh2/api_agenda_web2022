@@ -37,7 +37,7 @@ class Contato(db.Model):
         return '<Contato %r>' % self.nome
 
     def to_json(self):
-       return ContatoSchema.from_orm(self).dict()
+       return {c.name: str(getattr(self, c.name)) for c in self.__table__.columns}
 
 
 class ContatoSchema(BaseModel):
