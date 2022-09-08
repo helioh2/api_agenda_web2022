@@ -89,6 +89,7 @@ def contatos_json():
             Contato.query                                # objeto Query
                     .filter_by(id_usuario=id_usuario)    # objeto Query
                     .filter(Contato.nome.ilike(busca_str))  # objeto Query
+                    .order_by(Contato.nome)
                     .paginate(page=page, per_page=PER_PAGE)  # Pagination
         )
     else:
@@ -96,6 +97,7 @@ def contatos_json():
         contatos:Pagination = (
             Contato.query                                # objeto Query
                     .filter_by(id_usuario=id_usuario)    # objeto Query
+                    .order_by(Contato.nome)
                     .paginate(page=page, per_page=PER_PAGE)  # Pagination
 
         )
@@ -309,3 +311,10 @@ def logout_action():
     response = json.dumps({"msg": "logout successful"})
     # unset_jwt_cookies(response)  TODO
     return response
+
+
+@app.get("/token")
+@jwt_required()
+def verificar_se_token_vivo():
+    return json.dumps({"msg": "ok"}), 200  ## vai retornar, se o token for válido
+    
